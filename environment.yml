@@ -1,7 +1,4 @@
 # PORECAST conda environment
-# Pinned to the versions used by the notebooks (ipynb/) and the scripts:
-#   training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py
-#
 # Create with:  conda env create -f environment.yml
 # GPU note: torch is the CUDA 12.1 build (pytorch channel) and cupy-cuda12x
 #           targets CUDA 12.x. Adjust pytorch-cuda / cupy for your CUDA toolkit.
