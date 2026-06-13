@@ -1,7 +1,4 @@
 # PORECAST — direct dependencies (pip)
-# Packages directly imported by the notebooks (ipynb/) and the scripts
-#   training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py
-#
 # Install with:  pip install -r requirements.txt
 #
 # GPU notes:
