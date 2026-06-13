@@ -1,0 +1,27 @@
+# PORECAST — direct dependencies (pip)
+# Packages directly imported by the notebooks (ipynb/) and the scripts
+#   training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py
+#
+# Install with:  pip install -r requirements.txt
+#
+# GPU notes:
+#   * torch==2.5.1 here installs the default (CPU/cu12) wheel from PyPI. For the
+#     CUDA 12.1 build used in development:
+#       pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+#   * cupy-cuda12x targets CUDA 12.x; use cupy-cuda11x for CUDA 11.
+
+numpy==2.3.4
+scipy==1.16.3
+pandas==2.3.3
+matplotlib==3.10.7
+scikit-image==0.25.2
+tifffile==2025.10.16
+pims==0.7
+tqdm==4.67.1
+torch==2.5.1
+cupy-cuda12x==13.6.0
+napari==0.5.5
+PyQt5==5.15.11
+nd2reader==3.3.1
+joblib==1.5.2
+psutil==7.1.3

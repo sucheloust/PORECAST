@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "porecast"
+version = "0.1.0"
+description = "PORECAST — 3D U-Net pore segmentation: nd2 preprocessing, training, and post-processing"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+
+# Direct dependencies imported by the notebooks (ipynb/) and the scripts
+# training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py.
+# GPU note: torch==2.5.1 is the CUDA 12.1 build in development (install from the
+# pytorch cu121 index); cupy-cuda12x targets CUDA 12.x.
+dependencies = [
+    "numpy==2.3.4",
+    "scipy==1.16.3",
+    "pandas==2.3.3",
+    "matplotlib==3.10.7",
+    "scikit-image==0.25.2",
+    "tifffile==2025.10.16",
+    "pims==0.7",
+    "tqdm==4.67.1",
+    "torch==2.5.1",
+    "cupy-cuda12x==13.6.0",
+    "napari==0.5.5",
+    "PyQt5==5.15.11",
+    "nd2reader==3.3.1",
+    "joblib==1.5.2",
+    "psutil==7.1.3",
+]
+
+[tool.setuptools]
+py-modules = []

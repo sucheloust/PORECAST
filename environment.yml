@@ -1,0 +1,35 @@
+# PORECAST conda environment
+# Pinned to the versions used by the notebooks (ipynb/) and the scripts:
+#   training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py
+#
+# Create with:  conda env create -f environment.yml
+# GPU note: torch is the CUDA 12.1 build (pytorch channel) and cupy-cuda12x
+#           targets CUDA 12.x. Adjust pytorch-cuda / cupy for your CUDA toolkit.
+name: PORECAST
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.12
+  # core scientific / imaging stack (conda-forge)
+  - numpy=2.3.4
+  - scipy=1.16.3
+  - pandas=2.3.3
+  - matplotlib=3.10.7
+  - scikit-image=0.25.2
+  - tifffile=2025.10.16
+  - pims=0.7
+  - tqdm=4.67.1
+  # deep learning (pytorch channel, CUDA 12.1)
+  - pytorch=2.5.1
+  - pytorch-cuda=12.1
+  # pip-only packages
+  - pip
+  - pip:
+      - cupy-cuda12x==13.6.0
+      - napari==0.5.5
+      - PyQt5==5.15.11        # Qt backend for napari
+      - nd2reader==3.3.1
+      - joblib==1.5.2
+      - psutil==7.1.3
