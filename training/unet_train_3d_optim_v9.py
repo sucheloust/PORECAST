@@ -1,48 +1,4 @@
 #!/usr/bin/env python3
-"""
-NPC 3D U-Net training (v9).
-
-Inherits all v8 machinery (Focal-Tversky + SCE + GCE + clDice, confident-
-learning label cleaning, noise FiLM conditioning, SO(3)/elastic augmentation,
-AASPP bottleneck, CLAHE path). Six targeted fixes for the 1-3 ring-per-NPC
-ambiguity and several code correctness issues:
-
-  (1) AASPP bottleneck FiLM bug fixed. v8 accepted the noise-conditioning
-      vector in AASPP3D.forward but silently dropped it; FiLM scale/shift is
-      now applied after the fuse step, matching DoubleConv3D behaviour.
-
-  (2) Distance-heatmap auxiliary supervision (--w-dist, default 0.1). A
-      Gaussian-blurred version of the binary mask (sigma --dist-sigma,
-      default 4 voxels) is used as the regression target for the existing
-      dist output head, which was previously unsupervised dead weight. The
-      heatmap is topology-agnostic: a face-on disk, 2-ring, and 3-ring NPC
-      all produce a similar centroid-centred response, so the head provides
-      a consistent shape prior regardless of which view the patch samples.
-      MSE(sigmoid(dist_pred), gaussian_target) added with weight w_dist.
-
-  (3) NPC-level detection metric (--npc-group-radius, default 20 voxels).
-      v8 detection F1 ran connected-component IoU at the ring level, so a
-      3-ring NPC counted as 3 separate GT objects. Any prediction covering
-      the correct location but with different topology (blob vs 3 rings)
-      incurred spurious FP/FN. v9 dilates both pred and GT binary masks by
-      npc_group_radius before labelling, merging co-NPC rings into one
-      instance on both sides before IoU matching. det_f1 now measures NPC
-      localisation, not ring topology.
-
-  (4) Deep-supervision heads use pos_weight. v8 DS heads used plain BCE,
-      which is dominated by the vast background at fg_fraction ~0.0015. v9
-      passes criterion.pos_weight to DS BCE, matching the main loss signal.
-
-  (5) LR warmup (--lr-warmup-epochs, default 5). LinearLR warmup then
-      CosineAnnealingLR via SequentialLR. Stabilises early training with
-      the 6-term compound loss.
-
-  (6) clean-max-frac default 0.10 -> 0.20; full-val-roi default 256 -> 512.
-
-Sliding-window full-volume validation (--full-val-every) reports stitched
-Dice/IoU and per-NPC detection F1 (NPC-level). Built for large volumes
-(~400 x 2720 x 2720).
-"""
 
 import argparse
 import os
@@ -201,12 +157,10 @@ def partition_train_val_paired(paired_dir, output_root,
         (d / "images").mkdir(parents=True, exist_ok=True)
         (d / "masks").mkdir(parents=True, exist_ok=True)
 
-    # Symlink into the conventional layout. We preserve the original
+    # Symlink into the conventional layout. Preserves the original
     # filenames (so vol_01_img.tif goes to train/images/vol_01_img.tif).
     # The dataset matches images to masks by sorted order within each
-    # subdir, which works as long as paired files sort consistently --
-    # which they do by construction since we detected them via paired
-    # marker substitution.
+    # subdir
     for i, (ip, mp) in enumerate(zip(img_files, mask_files)):
         dest = val_dir if i in val_set else train_dir
         for sub, src in [("images", ip), ("masks", mp)]:
@@ -224,7 +178,7 @@ def partition_train_val_paired(paired_dir, output_root,
 
 
 # ---------------------------------------------------------------------------
-# GPU Keepalive
+# GPU Keepalive: Optional if CUDA times out during initial data load
 # ---------------------------------------------------------------------------
 def start_gpu_keepalive():
     script = ('import torch,time,sys\n'
