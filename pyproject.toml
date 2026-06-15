@@ -10,7 +10,7 @@ requires-python = ">=3.12,<3.13"
 readme = "README.md"
 
 # Direct dependencies imported by the notebooks (ipynb/) and the scripts
-# training/unet_train_3d_optim_v9.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py.
+# training/*.py, pre/nd2_to_tif_v2.py, post/*combined_v2.py.
 # GPU note: torch==2.5.1 is the CUDA 12.1 build in development (install from the
 # pytorch cu121 index); cupy-cuda12x targets CUDA 12.x.
 dependencies = [
