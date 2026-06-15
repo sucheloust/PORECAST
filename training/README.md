@@ -1,6 +1,7 @@
 # PORECAST — Training
 
-3D U-Net for nuclear pore complex (NPC) segmentation in volumetric microscopy.
+nuclear PORE Complex Automated Segmentation Tool
+3D U-Net for nuclear pore complex (NPC) segmentation in pan-ExM.
 
 This is the original single training script split into focused modules. The
 modules import each other by name, so run commands from inside this `training/`
