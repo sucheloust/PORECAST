@@ -360,8 +360,8 @@ class TverskyDiceLoss(nn.Module):
     w_gce adds a GCE/Lq robust term (Zhang & Sabuncu 2018) on foreground
     voxels: L_q = (1 - p^q)/q, which interpolates between CE (q->0) and the
     noise-robust MAE (q=1). Its gradient is bounded, so spurious positive
-    labels (antibody false positives, the v8 noise regime) cannot dominate
-    the loss the way an aggressive pos-weighted BCE term does.
+    labels (e.g. antibody false positives) cannot dominate the loss the way
+    an aggressive pos-weighted BCE term does.
     """
     def __init__(self, w_bce_sched, w_tversky=1.0,
                  pos_weight_sched=None, alpha_sched=None, beta_sched=None,
@@ -516,14 +516,11 @@ class DoubleConv3D(nn.Module):
 
 class AASPP3D(nn.Module):
     """
-    3D Atrous Spatial Pyramid Pooling bottleneck (adapted from MSA-UNet, 2021).
-    Three parallel dilated-conv branches (rates 1, 2, 4) + global avg-pool
-    branch, concatenated and fused with 1×1 conv + residual shortcut.
-    Replaces the plain DoubleConv3D bottleneck to widen the receptive field
-    without adding depth. Requires out_c divisible by 4.
-
-    v9: FiLM conditioning (cond_dim) wired up. v8 accepted cond but silently
-    dropped it; now applied after fuse, matching DoubleConv3D behaviour.
+    3D Atrous Spatial Pyramid Pooling bottleneck. Three parallel dilated-conv
+    branches (rates 1, 2, 4) plus a global avg-pool branch, concatenated and
+    fused with a 1x1 conv and a residual shortcut. Widens the receptive field
+    without adding depth. Optional FiLM conditioning is applied after the fuse.
+    Requires out_c divisible by 4.
     """
     def __init__(self, in_c, out_c, cond_dim=0):
         super().__init__()
@@ -1040,7 +1037,6 @@ class NPCDataset3D(Dataset):
             'add_negative_samples': bool(add_negative_samples),
             'negative_ratio': negative_ratio if add_negative_samples else 0,
             'max_patches_per_volume': max_patches_per_volume,
-            'extractor_version': 8,
         }
         cache_key = hashlib.sha256(
             repr(sorted(cache_key_data.items())).encode()).hexdigest()[:16]
@@ -1105,7 +1101,6 @@ class NPCDataset3D(Dataset):
            sharing across all 22+ DataLoader workers with no extra disk copy.
         Workers that hit a shm entry do zero-copy tensor slicing; workers that
         hit a mmap entry do a numpy slice (kernel handles caching and sharing)."""
-        import shutil
         from concurrent.futures import ThreadPoolExecutor
 
         pairs = list(zip(self.img_paths, self.mask_paths))
@@ -1309,9 +1304,6 @@ class NPCDataset3D(Dataset):
 
         # Center-crop back to patch_size, padding if the read was edge-clipped.
         if img.shape != (ps, ps, ps):
-            cz = (img.shape[0] - ps) // 2
-            cy = (img.shape[1] - ps) // 2
-            cx = (img.shape[2] - ps) // 2
             def _crop_or_pad(a, target):
                 D, H, W = a.shape
                 pads = []
@@ -1366,8 +1358,6 @@ class NPCDataset3D(Dataset):
         # range is configured)
         do_rescale = (self.rescale_range is not None
                       and np.random.rand() < self.rescale_prob)
-        # Sampling matches the original _augment logic exactly so behavior
-        # is unchanged -- we just compute the plan first instead of inline.
         if do_rescale or np.random.rand() < self.so3_rotation_prob:
             if np.random.rand() < self.so3_rotation_prob:
                 R = _random_rotation_matrix_so3()
@@ -1402,12 +1392,9 @@ class NPCDataset3D(Dataset):
                 'do_elastic': do_elastic}
 
     def _augment(self, img, mask, plan):
-        """Apply augmentation according to the pre-sampled plan (the plan
-        was used to size the source-read margin, so it must not change)."""
-        # --- Orientation augmentation ---------------------------------------
-        # Prefer arbitrary SO(3) rotations over the 24 cube rotations because
-        # cube rotations only permute axes — they cannot turn a side-on NPC
-        # into a top-down (en face) one.
+        """Apply the transforms chosen in the pre-sampled plan."""
+        # SO(3) rotations expose top-down (en face) orientations that the 24
+        # axis-permuting cube rotations cannot reach.
         mode = plan['mode']
         if mode == 'so3' or mode == 'cube_via_affine':
             img, mask = apply_affine_3d(img, mask, R=plan['R'],
@@ -1442,11 +1429,8 @@ class NPCDataset3D(Dataset):
             # Signed gamma: preserves sign, applies gamma to magnitude.
             gamma = np.random.uniform(0.7, 1.4)
             img = np.sign(img) * (np.abs(img) ** gamma)
-        # Additive noise is handled by the noise-matched augmentation in
-        # __getitem__ (which also updates the conditioning scalar), so it is
-        # intentionally not duplicated here. Per-patch Gaussian smoothing was
-        # removed — it blurred the high-frequency contrast that distinguishes
-        # dim NPCs from background texture.
+        # Additive noise is applied by the noise-matched augmentation in
+        # __getitem__ (which also updates the conditioning scalar).
         return img.astype(np.float32), mask.astype(np.float32)
 
 
@@ -1563,10 +1547,8 @@ def _detection_counts(pred_bin, gt_bin, min_size, iou_thresh,
 
     When npc_group_radius > 0, both pred and GT binary masks are first
     dilated to merge rings of the same NPC into one instance before IoU
-    matching. This fixes the v8 behaviour where a 3-ring NPC counted as 3
-    separate GT objects and any topology mismatch caused spurious FP/FN.
-    GT components below min_size are ignored; predicted components are all
-    counted.
+    matching, so a multi-ring NPC counts as a single object. GT components
+    below min_size are ignored; predicted components are all counted.
     """
     if npc_group_radius > 0:
         gt_lbl, n_gt = _group_to_npc_level(gt_bin, npc_group_radius)
@@ -1672,9 +1654,8 @@ def evaluate_full_volume(model, val_ds, device, amp, patch_size, stride,
     }
 
 
-@torch.inference_mode()
 def _bytes_human(n):
-    """Convert byte count to human-readable string."""
+    """Format a byte count as a human-readable string."""
     for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
         if n < 1024:
             return f"{n:.1f} {unit}"
@@ -1687,7 +1668,6 @@ def stage_to_local_disk(train_dir, val_dir, local_root,
     """Copy train/ + val/ to local disk. Pre-flight free-space check;
     temp-then-rename writes (crash-safe); skips size-matched existing files.
     Returns updated (train_dir, val_dir)."""
-    import shutil as _sh
     local_root = Path(local_root)
     local_train = local_root / "train"
     local_val = local_root / "val"
@@ -1773,7 +1753,7 @@ def stage_to_local_disk(train_dir, val_dir, local_root,
             if tmp_target.exists():
                 tmp_target.unlink()
             try:
-                _sh.copy2(str(real_src), str(tmp_target))
+                shutil.copy2(str(real_src), str(tmp_target))
             except OSError as e:
                 # Clean up before re-raising so the next run starts fresh
                 if tmp_target.exists():
@@ -2076,18 +2056,15 @@ def train(args):
     global_step = 0
 
     if args.resume:
-        from pathlib import Path as _P
-        if not _P(args.resume).exists():
+        if not Path(args.resume).exists():
             print(f"\n--resume {args.resume} does not exist; starting fresh.")
         else:
             print(f"\nResuming from {args.resume}")
             ckpt = torch.load(args.resume, map_location=device, weights_only=False)
-            # Filter checkpoint tensors to those whose shape matches the
-            # current model. This protects against architecture changes
-            # like --base, --depth, --patch-size, --use-prosma-gates being
-            # different from the run that produced the checkpoint.
-            # strict=False alone does NOT handle shape mismatches; it only
-            # tolerates missing/extra keys.
+            # Load only checkpoint tensors whose shape matches the current
+            # model, so architecture changes (--base, --depth, --patch-size)
+            # don't break resume. strict=False tolerates missing/extra keys
+            # but not shape mismatches, so they are filtered explicitly.
             model_sd = model.state_dict()
             ckpt_sd = ckpt.get('model', ckpt)  # raw state_dict also accepted
             compatible, skipped_shape, skipped_missing = {}, [], []
@@ -2223,10 +2200,9 @@ def train(args):
 
                 seg_loss, _ = criterion(mask_pred, mask_tgt, weight_map=wmap)
 
-                # Deep supervision loss — weighted sum of losses at each
-                # decoder level, with exponentially decaying weights for
-                # coarser levels (nnU-Net / Zeng et al. convention).
-                # v9: pass pos_weight so coarse heads don't collapse to
+                # Deep supervision loss: weighted sum of BCE at each decoder
+                # level, with exponentially decaying weights for coarser
+                # levels. pos_weight keeps coarse heads from collapsing to
                 # all-background on this class-imbalanced target.
                 ds_loss = torch.tensor(0.0, device=device)
                 if ds_outputs:
@@ -2240,8 +2216,8 @@ def train(args):
                         ds_weight *= 0.5
 
                 # Distance heatmap supervision: MSE between sigmoid(dist_pred)
-                # and Gaussian-blurred binary target (topology-agnostic NPC
-                # centroid heatmap). Trains the previously dead dist head.
+                # and the Gaussian-blurred binary target (topology-agnostic
+                # NPC centroid heatmap).
                 dist_loss = (F.mse_loss(torch.sigmoid(dist_pred.float()),
                                         dist_tgt.float())
                              if args.w_dist > 0
@@ -2464,7 +2440,7 @@ def train(args):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="NPC 3D U-Net Training (v8)")
+    ap = argparse.ArgumentParser(description="NPC 3D U-Net Training")
 
     # ---- Data: pre-partitioned OR paired flat folder ----
     ap.add_argument("--train_dir", default=None)
@@ -2484,9 +2460,9 @@ if __name__ == "__main__":
     ap.add_argument("--val-fraction", type=float, default=0.15)
 
     # ---- Output ----
-    ap.add_argument("--out", default="unet3d_npc_v8.pt")
+    ap.add_argument("--out", default="unet3d_npc.pt")
     ap.add_argument("--resume", default=None)
-    ap.add_argument("--logdir", default="runs/unet3d_npc_v8")
+    ap.add_argument("--logdir", default="runs/unet3d_npc")
 
     # ---- Training ----
     ap.add_argument("--epochs", type=int, default=100)
@@ -2596,8 +2572,7 @@ if __name__ == "__main__":
                          "full-volume validation pass.")
     ap.add_argument("--full-val-roi", type=int, default=512,
                     help="Edge length of the ROI subvolume evaluated per "
-                         "volume during full-volume validation. v9 default "
-                         "512 (was 256); 256^3 was <0.5%% of the volume.")
+                         "volume during full-volume validation.")
     ap.add_argument("--full-val-stride", type=int, default=0,
                     help="Sliding-window stride for full-volume validation. "
                          "0 -> patch_size // 2.")
@@ -2625,10 +2600,9 @@ if __name__ == "__main__":
                          "disk topology and reduces diffuse false positives).")
     ap.add_argument("--pos-weight", default="1.5",
                     help="CE positive-class weight. Constant or "
-                         "'start:end:epochs'. v8 default 1.5 (was 5): with "
-                         "trustworthy negatives but noisy positives, a large "
-                         "pos_weight amplifies every spurious positive label. "
-                         "Keep it mild -- just enough to learn the rare class.")
+                         "'start:end:epochs'. Kept mild: with trustworthy "
+                         "negatives but noisy positives, a large pos_weight "
+                         "amplifies every spurious positive label.")
     ap.add_argument("--w-gce", type=float, default=0.5,
                     help="Weight of the GCE/Lq robust-positive term (Zhang & "
                          "Sabuncu 2018) on foreground voxels. Bounded-gradient "
@@ -2638,10 +2612,10 @@ if __name__ == "__main__":
                     help="GCE/Lq exponent q in (0,1]. q->0 approaches CE; "
                          "q=1 is the noise-robust MAE. 0.7 is a robust default.")
     ap.add_argument("--w-dist", type=float, default=0.1,
-                    help="Weight for the distance heatmap MSE auxiliary loss "
-                         "(v9). Supervises the dist output head with a "
-                         "Gaussian-blurred binary mask so the head provides "
-                         "a topology-agnostic NPC centroid heatmap. 0 disables.")
+                    help="Weight for the distance heatmap MSE auxiliary loss. "
+                         "Supervises the dist output head with a Gaussian-"
+                         "blurred binary mask so the head provides a topology-"
+                         "agnostic NPC centroid heatmap. 0 disables.")
     ap.add_argument("--dist-sigma", type=float, default=4.0,
                     help="Gaussian sigma (voxels) for the distance heatmap "
                          "target. Controls how broadly the heatmap spreads "
@@ -2669,14 +2643,14 @@ if __name__ == "__main__":
     # ---- Performance ----
     ap.add_argument("--lr-warmup-epochs", type=int, default=5,
                     help="Number of epochs for linear LR warmup before "
-                         "cosine annealing begins (v9). Stabilises early "
-                         "training with the 6-term compound loss. 0 disables.")
+                         "cosine annealing begins. Stabilises early training "
+                         "with the compound loss. 0 disables.")
     ap.add_argument("--npc-group-radius", type=int, default=20,
                     help="Dilation radius (voxels) for NPC-level detection "
-                         "grouping in full-volume validation (v9). Dilates "
-                         "both pred and GT before component matching so "
-                         "co-NPC rings merge into one instance. 0 disables "
-                         "(reverts to v8 ring-level matching).")
+                         "grouping in full-volume validation. Dilates both "
+                         "pred and GT before component matching so co-NPC "
+                         "rings merge into one instance. 0 disables "
+                         "(ring-level matching).")
     ap.add_argument("--amp", action="store_true", default=True)
     ap.add_argument("--no-amp", action="store_false", dest="amp")
     ap.add_argument("--preload-volumes", action="store_true", default=False,
