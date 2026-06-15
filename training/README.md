@@ -1,6 +1,6 @@
 # PORECAST — Training
 
-nuclear PORE Complex Automated Segmentation Tool
+nuclear **PORE** **C**omplex **A**utomated **S**egmentation **T**ool
 
 3D U-Net for nuclear pore complex (NPC) segmentation in pan-ExM.
 
